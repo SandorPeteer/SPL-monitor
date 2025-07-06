@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="hu">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SPL Monitor</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      background: #000;
+      color: #fff;
+      font-family: monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding-top: 2vh;
+    }
+
+    #header {
+      font-size: 2vw;
+      margin-bottom: 1vh;
+    }
+
+    #display {
+      display: flex;
+      align-items: baseline;
+      gap: 1vw;
+    }
+
+    #spl-value {
+      font-size: 12vw;
+    }
+
+    #spl-unit {
+      font-size: 3vw;
+      color: #0f8;
+    }
+
+    #led-bar {
+      display: grid;
+      grid-template-columns: repeat(100, 1fr);
+      grid-gap: 1px;
+      width: 80vw;
+      height: 1.2vh;
+      margin-top: 1vh;
+    }
+
+    .led {
+      background: #111;
+      transition: background 0.3s;
+    }
+
+    #chart-container {
+      width: 80vw;
+      height: 30vh;
+      margin: 5vh;
+    }
+
+    #status {
+      margin-top: 1vh;
+      font-size: 1.2vw;
+    }
+
+    #info {
+      margin-top: 0.5vh;
+      font-size: 1vw;
+      color: #888;
+    }
+  </style>
+
+  <!-- Chart.js UMD -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+</head>
+
+<body>
+  <div id="header">SPL Monitor</div>
+
+  <div id="display">
+    <div id="spl-value">--.-</div>
+    <div id="spl-unit">dBA</div>
+  </div>
+
+  <div id="led-bar"></div>
+
+  <div id="chart-container">
+    <canvas id="splChart"></canvas>
+  </div>
+
+  <div id="status">OFFLINE</div>
+  <div id="info">Mód: -- | Súlyozás: -- | Sebesség: --</div>
+
+  <script>
+    // LED-bar inicializálás (30–130 dB = 100 LED)
+    const ledBar = document.getElementById('led-bar');
+    for (let i = 0; i < 100; i++) {
+      const seg = document.createElement('div');
+      seg.className = 'led';
+      ledBar.appendChild(seg);
+    }
+    const leds = document.querySelectorAll('.led');
+
+    // Chart.js setup
+    const ctx = document.getElementById('splChart').getContext('2d');
+    const labels = [];
+    const dataPoints = [];
+    const MAX_POINTS = 60;
+
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data: dataPoints,
+          tension: 0.2,
+          pointRadius: 0,
+          borderWidth: 2,
+          segment: {
+            borderColor: ctx => {
+              const y = ctx.p1.parsed.y;
+              return y > 120 ? 'red' : (y > 100 ? 'yellow' : '#0f8');
+            }
+          }
+        }]
+      },
+      options: {
+        animation: false,
+        maintainAspectRatio: false,
+        layout: { padding: 0 },
+        scales: {
+          x: {
+            type: 'category',
+            ticks: { color: '#ccc', maxTicksLimit: 10 },
+            grid: { display: false },
+            title: { display: true, text: 'Idő', color: '#888' }
+          },
+          y: {
+            min: 30,
+            max: 130,
+            ticks: { color: '#ccc', stepSize: 10 },
+            grid: { display: true, color: '#333', borderDash: [4, 2] },
+            title: { display: true, text: 'dB', color: '#888' }
+          }
+        },
+        plugins: { legend: { display: false } }
+      }
+    });
+
+    // DOM elemek
+    const statusEl = document.getElementById('status');
+    const infoEl = document.getElementById('info');
+    const splValEl = document.getElementById('spl-value');
+    const splUnitEl = document.getElementById('spl-unit');
+
+    // WebSocket kommunikáció
+    const socket = new WebSocket(`ws://${location.hostname}:8001`);
+    socket.onopen = () => { statusEl.textContent = 'ONLINE'; statusEl.style.color = '#0f8'; };
+    socket.onerror = () => { statusEl.textContent = 'ERROR'; statusEl.style.color = '#f00'; };
+    socket.onclose = () => { statusEl.textContent = 'OFFLINE'; statusEl.style.color = '#f00'; };
+
+    socket.onmessage = event => {
+      const d = JSON.parse(event.data);
+      const spl = d.spl;
+
+      // Digitális kijelző
+      splValEl.textContent = spl.toFixed(1);
+      splUnitEl.textContent = 'dB' + d.weight;
+      infoEl.textContent = `Mód: ${d.range} | Súlyozás: ${d.weight} | Sebesség: ${d.speed}`;
+
+      // LED-bar színátmenet
+      const lit = Math.round(spl - 30);
+      leds.forEach((led, i) => {
+        if (i < lit) {
+          if (i < 70) led.style.background = 'lime';         // <100 dB
+          else if (i < 90) led.style.background = 'yellow';  // 100-120 dB
+          else led.style.background = 'red';                 // >120 dB
+        } else {
+          led.style.background = '#111';
+        }
+      });
+
+      // Grafikon adat frissítés
+      if (labels.length >= MAX_POINTS) {
+        labels.shift(); dataPoints.shift();
+      }
+      const now = new Date().toLocaleTimeString('hu-HU');
+      labels.push(now);
+      dataPoints.push(spl);
+      chart.update('none');
+    };
+  </script>
+</body>
+
+</html>
