@@ -162,7 +162,7 @@
     const splUnitEl = document.getElementById('spl-unit');
 
     // WebSocket kommunikáció
-    const socket = new WebSocket(`ws://${location.hostname}:8001`);
+    const socket = new WebSocket(`ws://localhost:8001`);
     socket.onopen = () => { statusEl.textContent = 'ONLINE'; statusEl.style.color = '#0f8'; };
     socket.onerror = () => { statusEl.textContent = 'ERROR'; statusEl.style.color = '#f00'; };
     socket.onclose = () => { statusEl.textContent = 'OFFLINE'; statusEl.style.color = '#f00'; };
